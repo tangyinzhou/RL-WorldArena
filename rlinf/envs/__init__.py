@@ -29,6 +29,7 @@ class SupportedEnvType(Enum):
     HABITAT = "habitat"
     OPENSORAWM = "opensora_wm"
     WANWM = "wan_wm"
+    NN_WORLD_MODEL = "nn_world_model"
 
 
 def get_env_cls(env_type: str, env_cfg=None):
@@ -113,5 +114,9 @@ def get_env_cls(env_type: str, env_cfg=None):
         from rlinf.envs.world_model.world_model_wan_env import WanEnv
 
         return WanEnv
+    elif env_type == SupportedEnvType.NN_WORLD_MODEL:
+        from rlinf.envs.nn_world_model.nn_world_model_env import NNWorldModelEnv
+
+        return NNWorldModelEnv
     else:
         raise NotImplementedError(f"Environment type {env_type} not implemented")
