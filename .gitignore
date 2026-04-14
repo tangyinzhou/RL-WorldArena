@@ -1,5 +1,7 @@
 __pycache__
 .vscode
+.cursor
+.qoder
 *.log
 *.idx
 *.npy
@@ -20,3 +22,4 @@ uv.lock
 rlinf/envs/maniskill/assets
 PKG-INFO
 *.egg-info/
+RLinf-Pi05-RoboTwin-PPO-adjust_bottle

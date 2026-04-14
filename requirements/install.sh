@@ -1,7 +1,7 @@
 #! /bin/bash
 
 set -eo pipefail
-
+export UV_CACHE_DIR=/ML-vePFS/protected/tangyinzhou/RLinf/uv_cache
 TARGET=""
 
 MODEL=""

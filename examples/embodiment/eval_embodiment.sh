@@ -1,4 +1,9 @@
 #! /bin/bash
+export RAY_ROOT_DIR=/ML-vePFS/protected/tangyinzhou/tmp/ray
+export TMPDIR=/ML-vePFS/protected/tangyinzhou/tmp
+
+export ROBOT_PLATFORM=ALOHA
+export ROBOTWIN_PATH=/ML-vePFS/protected/tangyinzhou/RLinf/RoboTwin
 
 export EMBODIED_PATH="$( cd "$(dirname "${BASH_SOURCE[0]}" )" && pwd )"
 export REPO_PATH=$(dirname $(dirname "$EMBODIED_PATH"))
