@@ -127,6 +127,19 @@ class GenieWorldModelEnv(BaseWorldEnv):
         self._task_descriptions: list[str] = [""] * num_envs
         self._elapsed_steps: int = 0
 
+        # ------------------------------------------------------------------
+        # Load reward model if enabled (mirrors WanEnv pattern)
+        # ------------------------------------------------------------------
+        self.reward_model = None
+        self.reward_model_enabled = cfg.get("reward_model", {}).get("enabled", False)
+        if self.reward_model_enabled:
+            self.reward_model = self._load_reward_model(cfg)
+            self.reward_model.eval().to(self.device)
+            self.reward_threshold = cfg.get("reward_model", {}).get("reward_threshold", 0.9)
+        self.prev_step_reward = torch.zeros(
+            num_envs, dtype=torch.float32, device=self.device
+        )
+
     # ------------------------------------------------------------------
     # BaseWorldEnv abstract method
     # ------------------------------------------------------------------
@@ -144,6 +157,34 @@ class GenieWorldModelEnv(BaseWorldEnv):
             task_filter=task_filter,
             resize=cfg.resize,
         )
+
+    # ------------------------------------------------------------------
+    # Reward model loading (mirrors WanEnv)
+    # ------------------------------------------------------------------
+
+    def _load_reward_model(self, cfg):
+        """Load reward model based on configuration."""
+        rm_type = cfg.reward_model.type
+        rm_path = cfg.reward_model.from_pretrained
+
+        if rm_path is None:
+            raise ValueError(
+                "reward_model.enabled=True but reward_model.from_pretrained is not set. "
+                "Please provide a path to the reward model checkpoint."
+            )
+
+        # Lazy import to avoid dependency on diffsynth unless reward model is used
+        from diffsynth.models.reward_model import ResnetRewModel, TaskEmbedResnetRewModel  # noqa: PLC0415
+
+        if rm_type == "ResnetRewModel":
+            return ResnetRewModel(rm_path)
+        elif rm_type == "TaskEmbedResnetRewModel":
+            return TaskEmbedResnetRewModel(
+                checkpoint_path=rm_path,
+                task_suite_name=cfg.get("task_suite_name", "default"),
+            )
+        else:
+            raise ValueError(f"Unknown reward model type: {rm_type}")
 
     # ------------------------------------------------------------------
     # Reset-state helpers
@@ -297,6 +338,41 @@ class GenieWorldModelEnv(BaseWorldEnv):
         return sample_HW.squeeze(0)  # (gH, gW)
 
     # ------------------------------------------------------------------
+    # Reward calculation (mirrors WanEnv)
+    # ------------------------------------------------------------------
+
+    @torch.no_grad()
+    def _compute_reward(self, decoded_frames: torch.Tensor) -> torch.Tensor:
+        """Compute dense rewards using the reward model.
+
+        Args:
+            decoded_frames: (N, H, W, 3) uint8 – current frame observations.
+
+        Returns:
+            rewards: (N,) float32 – reward for each environment.
+        """
+        if not self.reward_model_enabled or self.reward_model is None:
+            return torch.zeros(
+                decoded_frames.shape[0], dtype=torch.float32, device=self.device
+            )
+
+        # Convert to format expected by reward model: (N, 3, H, W) float
+        frames_for_rm = decoded_frames.float().permute(0, 3, 1, 2) / 255.0
+        frames_for_rm = frames_for_rm.to(self.device)
+
+        rm_type = self.cfg.reward_model.type
+        if rm_type == "ResnetRewModel":
+            rewards = self.reward_model.predict_rew(frames_for_rm)
+        elif rm_type == "TaskEmbedResnetRewModel":
+            # Repeat task description for each environment
+            instructions = list(self._task_descriptions)
+            rewards = self.reward_model.predict_rew(frames_for_rm, instructions)
+        else:
+            raise ValueError(f"Unknown reward model type: {rm_type}")
+
+        return rewards
+
+    # ------------------------------------------------------------------
     # Observation helpers
     # ------------------------------------------------------------------
 
@@ -409,6 +485,8 @@ class GenieWorldModelEnv(BaseWorldEnv):
             self._task_descriptions[env_idx] = episode_data.get("task", "")
 
         self._reset_metrics()
+        # Reset prev_step_reward for new episode
+        self.prev_step_reward[:] = 0.0
         return self._make_obs(), {}
 
     def step(
@@ -445,16 +523,27 @@ class GenieWorldModelEnv(BaseWorldEnv):
             dtype=torch.bool,
             device=self.device,
         )
-        terminations = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
-        raw_rewards = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
-        step_reward = self.cfg.reward_coef * raw_rewards
+
+        # Compute rewards using the reward model (mirrors WanEnv)
+        obs = self._make_obs()
+        raw_rewards = self._compute_reward(obs["main_images"])  # (N,)
+
+        # Apply reward coefficient and optionally compute relative reward
+        if self.cfg.get("use_rel_reward", False):
+            step_reward = self.cfg.reward_coef * raw_rewards - self.prev_step_reward
+        else:
+            step_reward = self.cfg.reward_coef * raw_rewards
+        self.prev_step_reward = self.cfg.reward_coef * raw_rewards
+
+        # Estimate terminations based on reward threshold (mirrors WanEnv)
+        terminations = raw_rewards >= self.reward_threshold
 
         infos = self._record_metrics(step_reward, terminations, {})
 
         if self.ignore_terminations:
             terminations = torch.zeros_like(terminations)
 
-        return self._make_obs(), step_reward, terminations, truncated, infos
+        return obs, step_reward, terminations, truncated, infos
 
     def chunk_step(
         self,

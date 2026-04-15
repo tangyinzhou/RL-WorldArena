@@ -39,13 +39,21 @@ action_dim: 14
 task_description: "adjust bottle"
 
 # Wrist cameras (0 = disabled; set to 2 for OpenPI 3-image input)
-num_wrist_cameras: 0
+num_wrist_cameras: 2
 
 # Generation parameters (mirrors rollout_policy_genie_closedloop.py defaults)
 resize: 256            # Resize frame before VQModel encode
 num_prompt_frames: 1   # Number of prompt frames fed to Genie
 maskgit_steps: 2       # MaskGIT sampling iterations per frame
 temperature: 0.0       # Sampling temperature (0.0 = greedy)
+
+# Reward model configuration (mirrors WanEnv)
+# Set to null to disable reward model (rewards will be zero)
+reward_model:
+  enabled: False
+  type: TaskEmbedResnetRewModel  # or ResnetRewModel
+  from_pretrained: null  # Path to reward model checkpoint, e.g. "/path/to/resnet_rm.pth"
+  reward_threshold: 0.9  # Threshold for estimating task success
 
 video_cfg:
   save_video: False
