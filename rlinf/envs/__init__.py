@@ -30,6 +30,7 @@ class SupportedEnvType(Enum):
     OPENSORAWM = "opensora_wm"
     WANWM = "wan_wm"
     NN_WORLD_MODEL = "nn_world_model"
+    GENIE_WM = "genie_wm"
 
 
 def get_env_cls(env_type: str, env_cfg=None):
@@ -118,5 +119,9 @@ def get_env_cls(env_type: str, env_cfg=None):
         from rlinf.envs.nn_world_model.nn_world_model_env import NNWorldModelEnv
 
         return NNWorldModelEnv
+    elif env_type == SupportedEnvType.GENIE_WM:
+        from rlinf.envs.genie_wm.genie_world_model_env import GenieWorldModelEnv
+
+        return GenieWorldModelEnv
     else:
         raise NotImplementedError(f"Environment type {env_type} not implemented")
