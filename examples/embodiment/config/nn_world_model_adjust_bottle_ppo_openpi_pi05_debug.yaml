@@ -96,7 +96,7 @@ env:
     image_size: [224, 224]
     state_dim: 14
     action_dim: 14
-    num_wrist_cameras: 2
+    num_wrist_cameras: 0  # 0 = single view (base image only), 2 = dual wrist cameras
     task_description: "adjust bottle"
     video_cfg:
       save_video: False
@@ -116,7 +116,7 @@ env:
     image_size: [224, 224]
     state_dim: 14
     action_dim: 14
-    num_wrist_cameras: 2
+    num_wrist_cameras: 0  # 0 = single view (base image only), 2 = dual wrist cameras
     task_description: "adjust bottle"
     video_cfg:
       save_video: True

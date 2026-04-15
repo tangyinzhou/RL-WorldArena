@@ -198,13 +198,24 @@ def _decode_aloha(data: dict, *, adapt_to_pi: bool = False) -> dict:
     # dim sizes: [6, 1, 6, 1]
     if "observation/state" in data:
         base_images = convert_image(data["observation/image"])
-        wrist_images = convert_image(data["observation/wrist_image"])
         state = np.asarray(data["observation/state"])
-        data["images"] = {
-            "cam_high": base_images,
-            "cam_left_wrist": wrist_images[0, ...],
-            "cam_right_wrist": wrist_images[1, ...],
-        }
+
+        # Handle optional wrist images
+        wrist_image = data.get("observation/wrist_image")
+        if wrist_image is None:
+            # No wrist images available - use base image for all cameras
+            data["images"] = {
+                "cam_high": base_images,
+                "cam_left_wrist": base_images,  # Fallback to base image
+                "cam_right_wrist": base_images,  # Fallback to base image
+            }
+        else:
+            wrist_images = convert_image(wrist_image)
+            data["images"] = {
+                "cam_high": base_images,
+                "cam_left_wrist": wrist_images[0, ...],
+                "cam_right_wrist": wrist_images[1, ...],
+            }
     else:
         images = data["images"]
         images_dict = {name: convert_image(img) for name, img in images.items()}

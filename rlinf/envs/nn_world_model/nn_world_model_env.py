@@ -192,12 +192,15 @@ class NNWorldModelEnv(gym.Env):
         self._current_images = torch.zeros(
             (self.num_envs, H, W, 3), dtype=torch.uint8, device=self.device
         )
-        # Wrist images: [num_envs, num_wrist_cameras, H, W, 3]
-        self._current_wrist_images = torch.zeros(
-            (self.num_envs, self.num_wrist_cameras, H, W, 3),
-            dtype=torch.uint8,
-            device=self.device,
-        )
+        # Wrist images: [num_envs, num_wrist_cameras, H, W, 3] (only if num_wrist_cameras > 0)
+        if self.num_wrist_cameras > 0:
+            self._current_wrist_images = torch.zeros(
+                (self.num_envs, self.num_wrist_cameras, H, W, 3),
+                dtype=torch.uint8,
+                device=self.device,
+            )
+        else:
+            self._current_wrist_images = None
         self._current_states = torch.zeros(
             (self.num_envs, self.state_dim), dtype=torch.float32, device=self.device
         )
@@ -296,12 +299,15 @@ class NNWorldModelEnv(gym.Env):
 
     def _make_obs(self) -> dict:
         """Pack current internal state into the standard obs dict."""
-        return {
+        obs = {
             "main_images": self._current_images.clone(),
-            "wrist_images": self._current_wrist_images.clone(),
             "states": self._current_states.clone(),
             "task_descriptions": list(self._task_descriptions),
         }
+        # Only include wrist_images if we have wrist cameras
+        if self.num_wrist_cameras > 0:
+            obs["wrist_images"] = self._current_wrist_images.clone()
+        return obs
 
     def _random_reset_obs(self, env_idx: Optional[list[int]] = None):
         """Randomise observations for the given env indices (placeholder).
@@ -317,11 +323,12 @@ class NNWorldModelEnv(gym.Env):
             self._current_images[idx] = torch.randint(
                 0, 256, (H, W, 3), dtype=torch.uint8, device=self.device
             )
-            # Generate wrist images for each camera
-            for cam_idx in range(self.num_wrist_cameras):
-                self._current_wrist_images[idx, cam_idx] = torch.randint(
-                    0, 256, (H, W, 3), dtype=torch.uint8, device=self.device
-                )
+            # Generate wrist images for each camera (if enabled)
+            if self.num_wrist_cameras > 0:
+                for cam_idx in range(self.num_wrist_cameras):
+                    self._current_wrist_images[idx, cam_idx] = torch.randint(
+                        0, 256, (H, W, 3), dtype=torch.uint8, device=self.device
+                    )
             self._current_states[idx] = torch.randn(
                 self.state_dim, device=self.device
             )
@@ -438,13 +445,14 @@ class NNWorldModelEnv(gym.Env):
 
         # Update internal state
         self._current_images = next_images
-        # Generate next wrist images (placeholder: same random generation)
-        H, W = self.image_size
-        for idx in range(self.num_envs):
-            for cam_idx in range(self.num_wrist_cameras):
-                self._current_wrist_images[idx, cam_idx] = torch.randint(
-                    0, 256, (H, W, 3), dtype=torch.uint8, device=self.device
-                )
+        # Generate next wrist images (placeholder: same random generation, if enabled)
+        if self.num_wrist_cameras > 0:
+            H, W = self.image_size
+            for idx in range(self.num_envs):
+                for cam_idx in range(self.num_wrist_cameras):
+                    self._current_wrist_images[idx, cam_idx] = torch.randint(
+                        0, 256, (H, W, 3), dtype=torch.uint8, device=self.device
+                    )
         self._current_states = next_states
 
         self._elapsed_steps += 1

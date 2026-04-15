@@ -19,7 +19,7 @@ model_path: null   # Path to trained world model checkpoint. null = random weigh
 image_size: [224, 224]  # [H, W] for observations
 state_dim: 14
 action_dim: 14
-num_wrist_cameras: 2  # Number of wrist cameras (for OpenPI compatibility)
+num_wrist_cameras: 0  # Number of wrist cameras (0 = disabled, for OpenPI compatibility set to 2)
 task_description: "adjust bottle"
 
 video_cfg:
