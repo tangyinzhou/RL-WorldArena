@@ -22,7 +22,7 @@ from omegaconf import DictConfig, OmegaConf
 from torch.utils.data import DataLoader, DistributedSampler
 
 from rlinf.config import torch_dtype_from_precision
-from rlinf.data.datasets.reward_model import RewardBinaryDataset
+from rlinf.data.datasets.reward_model import RewardBinaryDataset, TextCondRewardBinaryDataset, text_cond_reward_collate_fn
 from rlinf.data.io_struct import RolloutResult
 from rlinf.data.tokenizers import hf_tokenizer
 from rlinf.hybrid_engines.fsdp.fsdp_model_manager import FSDPModelManager
@@ -656,4 +656,201 @@ class FSDPRewardWorker(FSDPModelManager, Worker):
         val_metrics = {key: np.mean(value) for key, value in metrics.items()}
         val_metrics = all_reduce_dict(val_metrics, op=torch.distributed.ReduceOp.AVG)
 
+        return val_metrics
+
+
+class FSDPTextCondRewardWorker(FSDPRewardWorker):
+    """FSDP-based worker for text-conditioned reward model training.
+
+    Extends :class:`FSDPRewardWorker` to handle batches that carry an
+    additional ``instructions`` field alongside ``(images, labels)``.
+
+    The underlying model is expected to accept
+    ``model(images, labels=labels, instructions=instructions)`` – i.e.
+    :class:`~rlinf.models.embodiment.reward.robotwin_reward_model
+    .RoboTwinT5CrossAttnRewardModel`.
+    """
+
+    def model_provider_func(self):
+        from rlinf.models.embodiment.reward import get_reward_model_class
+
+        reward_cls = get_reward_model_class(self.cfg.actor.model.model_type)
+        model_cfg = self.cfg.actor.model
+        from rlinf.config import torch_dtype_from_precision
+
+        torch_dtype = torch_dtype_from_precision(model_cfg.precision)
+        model = reward_cls(model_cfg)
+        model.to(torch_dtype)
+        return model
+
+    def build_dataloader(
+        self,
+    ) -> tuple[Optional[DataLoader], Optional[DataLoader]]:
+        """Build text-conditioned dataloaders from preprocessed split files."""
+        data_cfg = self.cfg.get("data", {})
+        train_data_paths = data_cfg.get("train_data_paths")
+        val_data_paths = data_cfg.get("val_data_paths")
+
+        self.logger.info(
+            f"Loading text-cond reward datasets from "
+            f"{train_data_paths} and {val_data_paths}"
+        )
+
+        train_dataset = TextCondRewardBinaryDataset(train_data_paths)
+        val_dataset = TextCondRewardBinaryDataset(val_data_paths)
+
+        if len(train_dataset) == 0:
+            self.logger.warning("Training dataset is empty")
+            return None, None
+
+        train_sampler = DistributedSampler(
+            train_dataset,
+            num_replicas=self._world_size,
+            rank=self._rank,
+            shuffle=True,
+        )
+        val_sampler = DistributedSampler(
+            val_dataset,
+            num_replicas=self._world_size,
+            rank=self._rank,
+            shuffle=False,
+        )
+
+        batch_size = self.cfg.actor.micro_batch_size
+        num_workers = data_cfg.get("num_workers", 4)
+
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            sampler=train_sampler,
+            num_workers=num_workers,
+            collate_fn=text_cond_reward_collate_fn,
+            pin_memory=True,
+            drop_last=True,
+        )
+        val_loader = DataLoader(
+            val_dataset,
+            batch_size=batch_size,
+            sampler=val_sampler,
+            num_workers=num_workers,
+            collate_fn=text_cond_reward_collate_fn,
+            pin_memory=True,
+            drop_last=False,
+        )
+
+        self.logger.info(
+            f"Created text-cond dataloaders: {len(train_dataset)} train, "
+            f"{len(val_dataset)} val"
+        )
+        return train_loader, val_loader
+
+    @Worker.timer("run_training")
+    def run_training(self) -> dict[str, float]:
+        """Run one text-conditioned training iteration."""
+        self.model.train()
+
+        assert (
+            self.cfg.actor.global_batch_size
+            % (self.cfg.actor.micro_batch_size * self._world_size)
+            == 0
+        ), "global_batch_size is not divisible by micro_batch_size * world_size"
+
+        self.gradient_accumulation = (
+            self.cfg.actor.global_batch_size
+            // self.cfg.actor.micro_batch_size
+            // self._world_size
+        )
+
+        metrics: dict[str, list] = {}
+
+        for idx in range(self.gradient_accumulation):
+            backward_ctx = self.before_micro_batch(
+                self.model,
+                is_last_micro_batch=(idx + 1) == self.gradient_accumulation,
+            )
+
+            try:
+                images, instructions, labels = next(self.data_iter)
+            except StopIteration:
+                self.data_iter = iter(self.data_loader)
+                images, instructions, labels = next(self.data_iter)
+
+            images = images.to(self.device)
+            labels = labels.to(self.device)
+            # ``instructions`` is a plain Python list of strings – no `.to()` needed.
+
+            with self.amp_context:
+                outputs = self.model(images, labels=labels, instructions=instructions)
+                loss = outputs["loss"]
+
+            loss = loss / self.gradient_accumulation
+            with backward_ctx:
+                self.grad_scaler.scale(loss).backward()
+
+            append_to_dict(
+                metrics,
+                {
+                    "loss": outputs["loss"].item(),
+                    "accuracy": outputs["accuracy"].item(),
+                    "probabilities_mean": outputs["probabilities"].mean().item(),
+                },
+            )
+
+        grad_norm, lr_list = self.optimizer_step()
+        self.optimizer.zero_grad(set_to_none=True)
+
+        lr_value = (
+            lr_list[0] if len(lr_list) > 0 else self.optimizer.param_groups[0]["lr"]
+        )
+        grad_norm_value = (
+            float(grad_norm) if isinstance(grad_norm, torch.Tensor) else grad_norm
+        )
+        append_to_dict(
+            metrics,
+            {
+                "learning_rate": lr_value,
+                "grad_norm": grad_norm_value,
+            },
+        )
+
+        self.lr_scheduler.step()
+        clear_memory()
+
+        train_metrics = {key: np.mean(value) for key, value in metrics.items()}
+        train_metrics = all_reduce_dict(
+            train_metrics, op=torch.distributed.ReduceOp.AVG
+        )
+        return train_metrics
+
+    @Worker.timer("run_eval")
+    def run_eval(self) -> dict[str, float]:
+        """Run validation over the full text-conditioned validation set."""
+        if self.val_loader is None:
+            return {}
+
+        self.model.eval()
+        metrics: dict[str, list] = {}
+
+        with torch.no_grad():
+            for images, instructions, labels in self.val_loader:
+                images = images.to(self.device)
+                labels = labels.to(self.device)
+                with self.amp_context:
+                    outputs = self.model(
+                        images, labels=labels, instructions=instructions
+                    )
+
+                append_to_dict(
+                    metrics,
+                    {
+                        "val_loss": outputs["loss"].item(),
+                        "val_accuracy": outputs["accuracy"].item(),
+                        "val_probabilities_mean": outputs["probabilities"]
+                        .mean()
+                        .item(),
+                    },
+                )
+
+        val_metrics = {key: np.mean(value) for key, value in metrics.items()}
+        val_metrics = all_reduce_dict(val_metrics, op=torch.distributed.ReduceOp.AVG)
         return val_metrics

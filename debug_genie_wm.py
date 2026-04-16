@@ -22,9 +22,9 @@ os.environ["NCCL_IB_DISABLE"] = "1"
 os.environ["XFORMERS_DISABLED"] = "true"
 os.environ["RAY_ROOT_DIR"] = "/ML-vePFS/protected/tangyinzhou/tmp/ray"
 os.environ["TMPDIR"] = "/ML-vePFS/protected/tangyinzhou/tmp"
-# Explicitly specify the Ray cluster address to avoid connecting to stale clusters
-if "RAY_ADDRESS" not in os.environ:
-    os.environ["RAY_ADDRESS"] = "9.2.91.132:6379"
+# RAY_ADDRESS is intentionally NOT hardcoded here.
+# Ray will auto-discover the local cluster, or you can set it externally:
+#   export RAY_ADDRESS="<head_ip>:6379"
 # Set CUDA visible devices to single GPU
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 

@@ -62,6 +62,7 @@ class SupportedModel(Enum):
     CMA_POLICY = ("cma", "embodied")
     LINGBOTVLA = ("lingbotvla", "embodied")
     RESNET_REWARD = ("resnet", "embodied")
+    ROBOTWIN_T5_CROSSATTN_REWARD = ("robotwin_t5_crossattn", "embodied")
 
     # Sft models
     QWEN2_5_VL_SFT = ("qwen2.5_vl", "sft")

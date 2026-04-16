@@ -24,3 +24,4 @@ PKG-INFO
 *.egg-info/
 RLinf-Pi05-RoboTwin-PPO-adjust_bottle
 RoboTwin
+pretrained_models
