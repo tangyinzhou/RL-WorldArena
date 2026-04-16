@@ -48,12 +48,25 @@ maskgit_steps: 2       # MaskGIT sampling iterations per frame
 temperature: 0.0       # Sampling temperature (0.0 = greedy)
 
 # Reward model configuration (mirrors WanEnv)
-# Set to null to disable reward model (rewards will be zero)
+# Set enabled: False to disable reward model (rewards will be zero)
+# Supported types: ResnetRewModel, TaskEmbedResnetRewModel, robotwin_t5_crossattn
 reward_model:
-  enabled: False
-  type: TaskEmbedResnetRewModel  # or ResnetRewModel
-  from_pretrained: null  # Path to reward model checkpoint, e.g. "/path/to/resnet_rm.pth"
-  reward_threshold: 0.9  # Threshold for estimating task success
+  enabled: True
+  type: robotwin_t5_crossattn
+  # from_pretrained is used as model_path for checkpoint loading
+  from_pretrained: "logs/robotwin_reward_model_adjust_bottle/robotwin_reward_training/checkpoints/best_model/actor/model_state_dict/full_weights.pt"
+  reward_threshold: 0.6       # sigmoid prob threshold for termination detection
+
+  # RoboTwinT5CrossAttnRewardModel hyper-parameters
+  t5_model_name: "t5-base"    # override to local path in debug script for offline use
+  freeze_t5: true
+  max_text_length: 64
+  num_attn_heads: 8
+  attn_dropout: 0.0
+  hidden_dim: 256
+  head_dropout: 0.1
+  image_size: [3, 224, 224]
+  normalize: true
 
 video_cfg:
   save_video: False

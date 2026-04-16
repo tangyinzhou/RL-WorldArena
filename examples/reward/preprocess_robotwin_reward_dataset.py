@@ -73,12 +73,12 @@ logger = get_logger()
 
 # List of data-root directories, each containing data/, instructions/, scene_info.json
 DATA_ROOTS: list[str] = [
-    "/manifold-obs/wzl/vla_robotwin_4k_320/10radiodata_10000/adjust_bottle/demo_clean",
-    "/manifold-obs/wzl/vla_robotwin_4k_320/fulldata_40000/adjust_bottle/demo_clean"
+    "/manifold-obs/wzl/vla_robotwin_4k_320/10radiodata_10000/click_bell/demo_clean",
+    "/manifold-obs/wzl/vla_robotwin_4k_320/fulldata_40000/click_bell/demo_clean"
 ]
 
 # Output directory for processed train.pt / val.pt
-OUTPUT_DIR: str = "logs/robotwin_reward_data"
+OUTPUT_DIR: str = "logs/robotwin_reward_data_click_bell"
 
 # Fraction of samples reserved for validation
 VAL_SPLIT: float = 0.2

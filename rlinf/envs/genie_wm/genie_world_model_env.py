@@ -132,10 +132,13 @@ class GenieWorldModelEnv(BaseWorldEnv):
         # ------------------------------------------------------------------
         self.reward_model = None
         self.reward_model_enabled = cfg.get("reward_model", {}).get("enabled", False)
+        # Always initialise reward_threshold so that step() can reference it even
+        # when the internal reward model is disabled (e.g. when an external
+        # EmbodiedRewardWorker is used instead).
+        self.reward_threshold = cfg.get("reward_model", {}).get("reward_threshold", 0.9)
         if self.reward_model_enabled:
             self.reward_model = self._load_reward_model(cfg)
             self.reward_model.eval().to(self.device)
-            self.reward_threshold = cfg.get("reward_model", {}).get("reward_threshold", 0.9)
         self.prev_step_reward = torch.zeros(
             num_envs, dtype=torch.float32, device=self.device
         )
@@ -163,10 +166,40 @@ class GenieWorldModelEnv(BaseWorldEnv):
     # ------------------------------------------------------------------
 
     def _load_reward_model(self, cfg):
-        """Load reward model based on configuration."""
+        """Load reward model based on configuration.
+
+        Supports two backends:
+          - ``ResnetRewModel`` / ``TaskEmbedResnetRewModel``: diffsynth-based
+            models used by the WAN world model environment.
+          - ``robotwin_t5_crossattn``: RLinf-native
+            :class:`~rlinf.models.embodiment.reward.robotwin_reward_model
+            .RoboTwinT5CrossAttnRewardModel`. ``from_pretrained`` is mapped to
+            the model's ``model_path`` for checkpoint loading.
+        """
         rm_type = cfg.reward_model.type
         rm_path = cfg.reward_model.from_pretrained
 
+        # ── RLinf-native reward model (no diffsynth dependency) ──────────
+        if rm_type == "robotwin_t5_crossattn":
+            from omegaconf import OmegaConf  # noqa: PLC0415
+            from rlinf.models.embodiment.reward import get_reward_model_class  # noqa: PLC0415
+
+            rm_cfg = OmegaConf.create({
+                # map from_pretrained → model_path expected by _load_model()
+                "model_path": rm_path,
+                "t5_model_name": cfg.reward_model.get("t5_model_name", "t5-base"),
+                "freeze_t5": cfg.reward_model.get("freeze_t5", True),
+                "num_attn_heads": cfg.reward_model.get("num_attn_heads", 8),
+                "attn_dropout": cfg.reward_model.get("attn_dropout", 0.0),
+                "hidden_dim": cfg.reward_model.get("hidden_dim", 256),
+                "head_dropout": cfg.reward_model.get("head_dropout", 0.1),
+                "max_text_length": cfg.reward_model.get("max_text_length", 64),
+                "image_size": list(cfg.reward_model.get("image_size", [3, 224, 224])),
+                "normalize": cfg.reward_model.get("normalize", True),
+            })
+            return get_reward_model_class("robotwin_t5_crossattn")(rm_cfg)
+
+        # ── diffsynth-based reward models ─────────────────────────────────
         if rm_path is None:
             raise ValueError(
                 "reward_model.enabled=True but reward_model.from_pretrained is not set. "
@@ -367,6 +400,14 @@ class GenieWorldModelEnv(BaseWorldEnv):
             # Repeat task description for each environment
             instructions = list(self._task_descriptions)
             rewards = self.reward_model.predict_rew(frames_for_rm, instructions)
+        elif rm_type == "robotwin_t5_crossattn":
+            # RoboTwinT5CrossAttnRewardModel.compute_reward() handles all
+            # preprocessing internally (NHWC/NCHW, uint8/float, resize,
+            # ImageNet normalisation). Pass raw decoded_frames directly.
+            # task_descriptions=None → skip cross-attention, pure visual pooling.
+            rewards = self.reward_model.compute_reward(
+                decoded_frames, task_descriptions=None
+            ).to(dtype=torch.float32, device=self.device)
         else:
             raise ValueError(f"Unknown reward model type: {rm_type}")
 

@@ -107,7 +107,12 @@ class BaseImageRewardModel(BaseRewardModel):
 
         # Apply ImageNet normalization
         if self.normalize:
-            images = (images - self._mean) / self._std
+            # Move normalization buffers to the same device as images to guard
+            # against timing issues where .to(device) was called before the
+            # CUDA context was fully established (e.g. inside Ray workers).
+            mean = self._mean.to(images.device)
+            std = self._std.to(images.device)
+            images = (images - mean) / std
 
         return images
 

@@ -194,10 +194,14 @@ class ResNetRewardModel(BaseImageRewardModel):
 
         Args:
             images: Image tensor of shape [B, C, H, W] or [B, H, W, C].
+                Automatically moved to the model's device if necessary.
 
         Returns:
             torch.Tensor: Reward tensor of shape [B].
         """
+        # Ensure input is on the same device as model parameters.
+        model_device = next(self.parameters()).device
+        images = images.to(model_device)
 
         # Preprocess and compute rewards
         images = self.preprocess_images(images)

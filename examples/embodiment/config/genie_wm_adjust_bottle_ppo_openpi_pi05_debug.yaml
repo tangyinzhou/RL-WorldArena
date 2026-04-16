@@ -16,7 +16,7 @@ hydra:
 cluster:
   num_nodes: 1
   component_placement:
-    actor, env, rollout: 0  # All components on GPU 0
+    actor, env, rollout: 0  # All components on GPU 0 (reward model lives inside EnvWorker)
 
 runner:
   task_type: embodied
@@ -24,9 +24,9 @@ runner:
     log_path: "../results_debug"
     project_name: rlinf_debug
     experiment_name: "genie_wm_ppo_openpi_pi05_debug"
-    logger_backends: ["tensorboard"]
+    logger_backends: ["tensorboard", "wandb"]
 
-  max_epochs: 2
+  max_epochs: 1000
   max_steps: -1
 
   only_eval: False
@@ -161,7 +161,7 @@ actor:
       buffer_dtype: ${actor.model.precision}
 
 reward:
-  use_reward_model: False
+  use_reward_model: False  # Reward is now computed inside GenieWorldModelEnv (env-internal)
 
 critic:
   use_critic_model: False

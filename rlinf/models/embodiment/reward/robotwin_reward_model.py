@@ -313,11 +313,16 @@ class RoboTwinT5CrossAttnRewardModel(BaseImageRewardModel):
 
         Args:
             images: Image tensor ``(B, C, H, W)`` or ``(B, H, W, C)``.
+                Automatically moved to the model's device if necessary.
             task_descriptions: Optional list of ``B`` instruction strings.
 
         Returns:
             Reward probabilities of shape ``(B,)``.
         """
+        # Ensure input is on the same device as model parameters, regardless
+        # of whether the caller (e.g. EnvWorker) is on CPU or GPU.
+        model_device = next(self.parameters()).device
+        images = images.to(model_device)
         with torch.no_grad():
             visual_tokens = self._encode_visual(images)
             pooled = self._fuse(visual_tokens, task_descriptions)

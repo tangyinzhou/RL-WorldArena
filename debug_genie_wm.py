@@ -28,6 +28,17 @@ os.environ["TMPDIR"] = "/ML-vePFS/protected/tangyinzhou/tmp"
 # Set CUDA visible devices to single GPU
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
+# ---------- wandb configuration ----------
+# API key is read from the environment; set WANDB_API_KEY before running,
+# or export it in your shell profile.  Do NOT commit a real key to source.
+# If WANDB_API_KEY is already set externally this is a no-op.
+if not os.environ.get("WANDB_API_KEY"):
+    # Fallback: offline mode so training won't block on missing credentials.
+    os.environ["WANDB_MODE"] = "offline"
+# Disable the interactive login prompt inside Ray worker subprocesses.
+os.environ.setdefault("WANDB_SILENT", "true")
+os.environ.setdefault("WANDB_CONSOLE", "off")
+
 # Set paths
 REPO_PATH = "/ML-vePFS/protected/tangyinzhou/RLinf"
 EMBODIED_PATH = REPO_PATH  # EMBODIED_PATH points to the RLinf repo root
@@ -75,10 +86,51 @@ mp.set_start_method("spawn", force=True)
 CONFIG_PATH = os.path.join(REPO_PATH, "examples/embodiment/config")
 CONFIG_NAME = "genie_wm_adjust_bottle_ppo_openpi_pi05_debug"
 
+# Local T5 model path (used by the reward model's text encoder offline)
+LOCAL_T5_PATH = os.path.join(REPO_PATH, "pretrained_models", "t5-base")
+
+# Reward model checkpoint produced by debug_robotwin_reward_model.py
+REWARD_MODEL_PATH = os.path.join(
+    REPO_PATH,
+    "logs/robotwin_reward_model_adjust_bottle/robotwin_reward_training"
+    "/checkpoints/best_model/actor/model_state_dict/full_weights.pt",
+)
+
 
 @hydra.main(version_base="1.1", config_path=CONFIG_PATH, config_name=CONFIG_NAME)
 def main(cfg):
     """Main training function for debugging."""
+
+    # ------------------------------------------------------------------
+    # Reward model path overrides (adapt to local environment)
+    # The reward model now lives INSIDE GenieWorldModelEnv (env-internal),
+    # so we override env.train / env.eval reward_model paths here.
+    # ------------------------------------------------------------------
+    for env_split in ("train", "eval"):
+        env_cfg = cfg.env.get(env_split)
+        if env_cfg is None:
+            continue
+        rm_cfg = env_cfg.get("reward_model")
+        if rm_cfg is None or not rm_cfg.get("enabled", False):
+            continue
+
+        if os.path.exists(LOCAL_T5_PATH):
+            print(f"\n✓ [{env_split}] Using local T5 model for reward encoder: {LOCAL_T5_PATH}")
+            rm_cfg.t5_model_name = LOCAL_T5_PATH
+        else:
+            print(
+                f"\n⚠ [{env_split}] Local T5 not found at {LOCAL_T5_PATH}, "
+                "will download from HuggingFace"
+            )
+
+        if os.path.exists(REWARD_MODEL_PATH):
+            print(f"✓ [{env_split}] Using trained reward model checkpoint: {REWARD_MODEL_PATH}")
+            rm_cfg.from_pretrained = REWARD_MODEL_PATH
+        else:
+            print(
+                f"\n⚠ [{env_split}] Reward checkpoint not found at {REWARD_MODEL_PATH}. "
+                "Starting reward model from scratch (ImageNet-pretrained ResNet + random heads)."
+            )
 
     # Validate configuration
     cfg = validate_cfg(cfg)

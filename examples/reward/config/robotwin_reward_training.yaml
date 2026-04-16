@@ -14,7 +14,7 @@ cluster:
 runner:
   task_type: sft   # SFTRunner drives the training loop
   logger:
-    log_path: "logs/robotwin_reward_model"
+    log_path: "logs/robotwin_reward_model_click_bell"
     project_name: rlinf
     experiment_name: "robotwin_reward_training"
     logger_backends: ["wandb"]
@@ -37,8 +37,8 @@ data:
   #   python examples/reward/preprocess_robotwin_reward_dataset.py \
   #       --data-root /manifold-obs/wzl/vla_robotwin_4k_320/10radiodata_10000/adjust_bottle/demo_clean \
   #       --output-dir logs/robotwin_reward_data
-  train_data_paths: "logs/robotwin_reward_data/train.pt"
-  val_data_paths:   "logs/robotwin_reward_data/val.pt"
+  train_data_paths: "logs/robotwin_reward_data_click_bell/train.pt"
+  val_data_paths:   "logs/robotwin_reward_data_click_bell/val.pt"
   num_workers: 4
 
 actor:
