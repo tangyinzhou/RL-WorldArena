@@ -21,7 +21,7 @@ cluster:
 runner:
   task_type: embodied
   logger:
-    log_path: "../results_debug"
+    log_path: "./logs"
     project_name: rlinf_debug
     experiment_name: "genie_wm_ppo_openpi_pi05_debug"
     logger_backends: ["tensorboard", "wandb"]
@@ -31,7 +31,7 @@ runner:
 
   only_eval: False
   val_check_interval: 1
-  save_interval: 1
+  save_interval: 50
 
   resume_dir: null
   ckpt_path: null
@@ -89,14 +89,14 @@ env:
     total_num_envs: 1
     reward_coef: ${algorithm.reward_coef}
     max_episode_steps: 100
-    max_steps_per_rollout_epoch: 100
+    max_steps_per_rollout_epoch: 400
     group_size: ${algorithm.group_size}
     # Override data path and model checkpoints here if needed:
     # val10_root: "/path/to/your/val10_dataset"
     # task_filter: ["adjust_bottle"]
     # genie_checkpoint: "/path/to/your/genie/checkpoint"
     video_cfg:
-      save_video: False
+      save_video: True
       video_base_dir: ${runner.logger.log_path}/video/train
   eval:
     total_num_envs: 1

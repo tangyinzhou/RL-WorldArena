@@ -16,7 +16,7 @@ dist
 logs/*
 outputs/*
 *.so
-.venv
+.venv*
 .docs-venv
 uv.lock
 rlinf/envs/maniskill/assets
@@ -25,3 +25,14 @@ PKG-INFO
 RLinf-Pi05-RoboTwin-PPO-adjust_bottle
 RoboTwin
 pretrained_models
+*.pt
+*.safetensors
+*.distcp
+pi05_base
+cosmos-predict2.5
+Ctrl-World
+datasets
+diffsynth-studio
+opensora
+roboscape
+uv_cache

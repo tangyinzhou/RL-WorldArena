@@ -8,6 +8,7 @@ export MUJOCO_GL="egl"
 export PYOPENGL_PLATFORM="egl"
 
 export PYTHONPATH=${REPO_PATH}:${LIBERO_REPO_PATH}:$PYTHONPATH
+export WANDB_API_KEY='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'
 
 if [ -z "$1" ]; then
     CONFIG_NAME="maniskill_ppo_openvlaoft"

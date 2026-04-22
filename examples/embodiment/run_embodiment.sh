@@ -9,6 +9,9 @@ export PYOPENGL_PLATFORM="egl"
 export ROBOTWIN_PATH=${ROBOTWIN_PATH:-"/path/to/RoboTwin"}
 export PYTHONPATH=${REPO_PATH}:${ROBOTWIN_PATH}:$PYTHONPATH
 
+# WandB API Key for experiment tracking
+export WANDB_API_KEY='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'
+
 # Base path to the BEHAVIOR dataset, which is the BEHAVIOR-1k repo's dataset folder
 # Only required when running the behavior experiment.
 export OMNIGIBSON_NO_OMNI_LOGS=${OMNIGIBSON_NO_OMNI_LOGS:-1}
