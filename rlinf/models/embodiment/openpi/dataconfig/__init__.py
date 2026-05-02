@@ -326,6 +326,21 @@ _CONFIGS = [
         num_train_steps=20_000,
     ),
     TrainConfig(
+        name="pi05_aloha_robotwin_head_adjust_bottle",
+        model=pi0_config.Pi0Config(pi05=True, discrete_state_input=True),
+        data=LeRobotAlohaHeadOnlyDataConfig(
+            repo_id="rlinf/robotwin_headcam_adjust_bottle",
+            base_config=DataConfig(prompt_from_task=True),
+            assets=AssetsConfig(
+                assets_dir="checkpoints/torch/pi05_aloha_robotwin/assets"
+            ),
+            extra_delta_transform=True,
+            adapt_to_pi=False,
+        ),
+        pytorch_weight_path="checkpoints/torch/pi05_base",
+        num_train_steps=20_000,
+    ),
+    TrainConfig(
         name="pi0_behavior",
         model=pi0_config.Pi0Config(),
         data=LeRobotBehaviorDataConfig(

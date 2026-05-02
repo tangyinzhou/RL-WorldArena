@@ -205,13 +205,21 @@ def prepare_actions(
             raw_chunk_actions=raw_chunk_actions,
             model_type=model_type,
         )
-    elif env_type == SupportedEnvType.OPENSORAWM or env_type == SupportedEnvType.WANWM:
+    elif (
+        env_type == SupportedEnvType.OPENSORAWM
+        or env_type == SupportedEnvType.WANWM
+        or env_type == SupportedEnvType.IVIDEOGPTWM
+        or env_type == SupportedEnvType.IRASIMWM
+    ):
         # TODO: Implement prepare_actions_for_opensora_wm
         if wm_env_type == "libero":
             chunk_actions = prepare_actions_for_libero(
                 raw_chunk_actions=raw_chunk_actions,
                 model_type=model_type,
             )
+        elif wm_env_type == "robotwin":
+            # RobotWin world model: pass actions directly
+            chunk_actions = raw_chunk_actions
         else:
             raise NotImplementedError(f"Env type {wm_env_type} not implemented")
     elif env_type == SupportedEnvType.MANISKILL:
@@ -228,6 +236,25 @@ def prepare_actions(
         chunk_actions = raw_chunk_actions
     elif env_type == SupportedEnvType.GENIE_WM:
         chunk_actions = raw_chunk_actions
+    elif env_type == SupportedEnvType.CTRLWORLD_WM:
+        if wm_env_type == "robotwin":
+            # Ctrl-World RobotWin: pass actions directly (normalisation done inside CtrlWorldEnv)
+            chunk_actions = raw_chunk_actions
+        else:
+            raise NotImplementedError(
+                f"Ctrl-World wm_env_type={wm_env_type} not implemented"
+            )
+    elif env_type == SupportedEnvType.COSMOSWM:
+        if wm_env_type == "libero":
+            chunk_actions = prepare_actions_for_libero(
+                raw_chunk_actions=raw_chunk_actions,
+                model_type=model_type,
+            )
+        elif wm_env_type == "robotwin":
+            # Cosmos RobotWin: pass actions directly (normalization done inside CosmosEnv)
+            chunk_actions = raw_chunk_actions
+        else:
+            raise NotImplementedError(f"Cosmos wm_env_type={wm_env_type} not implemented")
     elif env_type == SupportedEnvType.METAWORLD:
         chunk_actions = prepare_actions_for_metaworld(
             raw_chunk_actions=raw_chunk_actions,

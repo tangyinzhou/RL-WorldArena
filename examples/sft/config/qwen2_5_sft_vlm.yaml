@@ -27,7 +27,7 @@ runner:
   # save the model interval
   save_interval: 1000
   experiment_name: qwen2_5_vl_sft
-  output_dir: ../results
+  output_dir: /manifold-obs/tangyinzhou/RLinf/logs
   resume_dir: null
 
 data:

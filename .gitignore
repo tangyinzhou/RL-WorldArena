@@ -29,6 +29,7 @@ pretrained_models
 *.safetensors
 *.distcp
 pi05_base
+pi05_jx*
 cosmos-predict2.5
 Ctrl-World
 datasets
@@ -36,3 +37,5 @@ diffsynth-studio
 opensora
 roboscape
 uv_cache
+Qwen3.5-9B
+iVideoGPT

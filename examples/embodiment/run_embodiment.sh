@@ -1,5 +1,6 @@
 #! /bin/bash
-
+export export ROBOT_PLATFORM=ALOHA
+export ROBOTWIN_PATH=/ML-vePFS/protected/tangyinzhou/RLinf/RoboTwin
 export EMBODIED_PATH="$( cd "$(dirname "${BASH_SOURCE[0]}" )" && pwd )"
 export REPO_PATH=$(dirname $(dirname "$EMBODIED_PATH"))
 export SRC_FILE="${EMBODIED_PATH}/train_embodied_agent.py"
@@ -7,10 +8,18 @@ export SRC_FILE="${EMBODIED_PATH}/train_embodied_agent.py"
 export MUJOCO_GL="egl"
 export PYOPENGL_PLATFORM="egl"
 export ROBOTWIN_PATH=${ROBOTWIN_PATH:-"/path/to/RoboTwin"}
-export PYTHONPATH=${REPO_PATH}:${ROBOTWIN_PATH}:$PYTHONPATH
+
+# Add diffsynth-studio to PYTHONPATH for Wan world model
+export DIFFSYNTH_PATH="${REPO_PATH}/diffsynth-studio"
+export IRASIM_ROOT=${IRASIM_ROOT:-"/ML-vePFS/protected/lizhuohang/IRASim"}
+export PYTHONPATH="${REPO_PATH}:${ROBOTWIN_PATH}:${DIFFSYNTH_PATH}:${IRASIM_ROOT}:$PYTHONPATH"
+
+# export ROBOSCAPE_GENIE_PATH="${REPO_PATH}/roboscape/genie"
+# export PYTHONPATH="${REPO_PATH}:${ROBOTWIN_PATH}:${DIFFSYNTH_PATH}:${ROBOSCAPE_GENIE_PATH}:$PYTHONPATH"
 
 # WandB API Key for experiment tracking
 export WANDB_API_KEY='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'
+
 
 # Base path to the BEHAVIOR dataset, which is the BEHAVIOR-1k repo's dataset folder
 # Only required when running the behavior experiment.
@@ -25,7 +34,7 @@ export OMNIGIBSON_HEADLESS=${OMNIGIBSON_HEADLESS:-1}
 export ISAAC_PATH=${ISAAC_PATH:-/path/to/isaac-sim}
 export EXP_PATH=${EXP_PATH:-$ISAAC_PATH/apps}
 export CARB_APP_PATH=${CARB_APP_PATH:-$ISAAC_PATH/kit}
-
+export RLINF_LOG_BASE_DIR="/manifold-obs/tangyinzhou/RLinf/logs"
 if [ -z "$1" ]; then
     CONFIG_NAME="maniskill_ppo_openvlaoft"
 else
@@ -52,7 +61,8 @@ fi
 echo "Using ROBOT_PLATFORM=$ROBOT_PLATFORM"
 
 echo "Using Python at $(which python)"
-LOG_DIR="${REPO_PATH}/logs/$(date +'%Y%m%d-%H:%M:%S')-${CONFIG_NAME}" #/$(date +'%Y%m%d-%H:%M:%S')"
+LOG_BASE_DIR=${RLINF_LOG_BASE_DIR:-"${REPO_PATH}/logs"}
+LOG_DIR="${LOG_BASE_DIR}/$(date +'%Y%m%d-%H:%M:%S')-${CONFIG_NAME}" #/$(date +'%Y%m%d-%H:%M:%S')"
 MEGA_LOG_FILE="${LOG_DIR}/run_embodiment.log"
 mkdir -p "${LOG_DIR}"
 CMD="python ${SRC_FILE} --config-path ${EMBODIED_PATH}/config/ --config-name ${CONFIG_NAME} runner.logger.log_path=${LOG_DIR}"

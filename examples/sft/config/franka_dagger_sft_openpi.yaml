@@ -18,7 +18,7 @@ cluster:
 runner:
   task_type: sft
   logger:
-    log_path: "../results"
+    log_path: "/manifold-obs/tangyinzhou/RLinf/logs"
     project_name: rlinf
     experiment_name: "franka_sft_openpi"
     logger_backends: ["tensorboard"]

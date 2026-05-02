@@ -328,3 +328,97 @@ class RoboTwinT5CrossAttnRewardModel(BaseImageRewardModel):
             pooled = self._fuse(visual_tokens, task_descriptions)
             logits = self.reward_head(pooled).squeeze(-1)
             return torch.sigmoid(logits)
+
+    @torch.no_grad()
+    def predict_rew(
+        self,
+        obs: torch.Tensor,
+        instructions: Optional[list[str]] = None,
+    ) -> torch.Tensor:
+        """WanEnv兼容的reward预测接口。
+        
+        这个方法与WanEnv的调用方式完全兼容:
+        - WanEnv传入: obs [B, 3, H, W] (值域可能是[-1, 1]或[0, 1])
+        - WanEnv期望返回: rewards [B]
+        
+        Args:
+            obs: 图像观测 tensor ``(B, 3, H, W)``。
+                 值域可能是 [-1, 1] (来自WanEnv的current_obs)
+                 或 [0, 1] (标准的归一化图像)。
+            instructions: 任务描述字符串列表，长度 ``B``。
+        
+        Returns:
+            rewards: 奖励概率 tensor ``(B,)``，范围 [0, 1]。
+        """
+        # 1. 处理输入值域
+        # WanEnv的current_obs是[-1, 1]，需要转换到[0, 1]
+        if obs.min() < 0:
+            # 从[-1, 1]转换到[0, 1]
+            obs = (obs + 1.0) / 2.0
+        
+        # 2. 使用BaseImageRewardModel的预处理 (resize + ImageNet normalize)
+        obs = self.preprocess_images(obs)
+        
+        # 3. 调用compute_reward (内部会处理device转移和no_grad)
+        return self.compute_reward(obs, task_descriptions=instructions)
+
+    @classmethod
+    def from_pretrained(
+        cls,
+        checkpoint_path: str,
+        config: Optional[dict] = None,
+    ) -> "RoboTwinT5CrossAttnRewardModel":
+        """从checkpoint加载预训练模型。
+        
+        Args:
+            checkpoint_path: .pth文件路径
+            config: 可选的配置dict，如果不提供则使用默认配置
+        
+        Returns:
+            加载了权重的RoboTwinT5CrossAttnRewardModel实例
+        """
+        from omegaconf import DictConfig
+        
+        # 默认配置 (与训练时一致)
+        default_config = {
+            "model_type": "robotwin_t5_crossattn",
+            "t5_model_name": "t5-base",
+            "freeze_t5": True,
+            "max_text_length": 64,
+            "num_attn_heads": 8,
+            "attn_dropout": 0.0,
+            "hidden_dim": 256,
+            "head_dropout": 0.1,
+            "image_size": [3, 224, 224],
+            "normalize": True,
+            "precision": "fp32",
+            "add_value_head": False,
+            "is_lora": False,
+            "freeze_vit": False,
+            "use_flash_attention": False,
+        }
+        
+        # 合并用户配置
+        if config is not None:
+            default_config.update(config)
+        
+        cfg = DictConfig(default_config)
+        
+        # 创建模型实例
+        model = cls(cfg)
+        
+        # 加载checkpoint
+        print(f"Loading reward model checkpoint from: {checkpoint_path}")
+        checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        
+        # checkpoint是直接的state_dict格式
+        if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+            state_dict = checkpoint["model_state_dict"]
+        else:
+            state_dict = checkpoint
+        
+        # 加载权重
+        model.load_state_dict(state_dict, strict=True)
+        print(f"✓ Reward model loaded successfully")
+        
+        return model

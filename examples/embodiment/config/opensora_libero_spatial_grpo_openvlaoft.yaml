@@ -15,7 +15,7 @@ hydra:
 cluster:
   num_nodes: 1
   component_placement:
-    actor,env,rollout: all
+    actor,env,rollout: 4,5,6,7
 
 runner:
   task_type: embodied
@@ -92,7 +92,7 @@ env:
     max_steps_per_rollout_epoch: 256
     reward_coef: ${algorithm.reward_coef}
     reset_gripper_open: False
-    opensora_wm_hf_ckpt_path: "/path/to/model/RLinf-OpenSora-LIBERO-Spatial"
+    opensora_wm_hf_ckpt_path: "/ML-vePFS/protected/tangyinzhou/RLinf/opensora/RLinf-OpenSora-LIBERO-Spatial"
     enable_offload: True
   eval:
     total_num_envs: 500
@@ -115,7 +115,7 @@ rollout:
   pipeline_stage_num: 1
 
   model:
-    model_path: "/path/to/model/Openvla-oft-SFT-libero-spatial-traj1/" # https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-spatial-traj1
+    model_path: "/ML-vePFS/protected/tangyinzhou/RLinf/opensora/Openvla-oft-SFT-libero-spatial-traj1" # https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-spatial-traj1
     precision: ${actor.model.precision}
 
 actor:
@@ -128,7 +128,7 @@ actor:
 
   # Override the default values in model/openvla_oft
   model:
-    model_path: "/path/to/model/Openvla-oft-SFT-libero-spatial-traj1/" # https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-spatial-traj1
+    model_path: "/ML-vePFS/protected/tangyinzhou/RLinf/opensora/Openvla-oft-SFT-libero-spatial-traj1" # https://huggingface.co/Haozhan72/Openvla-oft-SFT-libero-spatial-traj1
     model_type: "openvla_oft"
 
     unnorm_key: libero_spatial_no_noops

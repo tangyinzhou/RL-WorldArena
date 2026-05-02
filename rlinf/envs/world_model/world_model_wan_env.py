@@ -21,7 +21,6 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 import torchvision.transforms as transforms
-from diffsynth.models.reward_model import ResnetRewModel, TaskEmbedResnetRewModel
 from diffsynth.pipelines.wan_video_new import ModelConfig, WanVideoPipeline
 from PIL import Image
 
@@ -92,16 +91,21 @@ class WanEnv(BaseWorldEnv):
 
         # Condition action to generate video,
         # keep length of condition_frame_length
+        # 支持可配置的action维度 (LIBERO=7, RobotWin=7或14)
+        self.action_dim = cfg.get("action_dim", 7)
         self.condition_action = torch.zeros(
             self.num_envs,
             self.condition_frame_length,
-            7,
+            self.action_dim,
         )
 
         self.reset_gripper_open = cfg.get("reset_gripper_open", True)
-        self.is_libero_env = cfg.get("wm_env_type", "libero") == "libero"
+        self.wm_env_type = cfg.get("wm_env_type", "libero")
+        self.is_libero_env = self.wm_env_type == "libero"
+        self.is_robotwin_env = self.wm_env_type == "robotwin"
 
-        # If reset_gripper_open is True and the environment is Libero, set the gripper open action to -1
+        # LIBERO: 夹爪打开设为-1
+        # RobotWin: 使用绝对位置控制，不需要特殊处理
         if self.reset_gripper_open and self.is_libero_env:
             self.condition_action[:, :, -1] = -1
 
@@ -116,8 +120,13 @@ class WanEnv(BaseWorldEnv):
         self._is_offloaded = False
 
     def _build_dataset(self, cfg):
+        # 支持可配置的action_key (LIBERO='delta_action', RobotWin='abs_action')
+        action_key = cfg.get("action_key", "delta_action")
+        
         return NpyTrajectoryDatasetWrapper(
-            cfg.initial_image_path, enable_kir=self.enable_kir
+            cfg.initial_image_path,
+            enable_kir=self.enable_kir,
+            action_key=action_key,
         )
 
     def _build_pipeline(self):
@@ -137,11 +146,28 @@ class WanEnv(BaseWorldEnv):
 
     def _load_reward_model(self):
         if self.cfg.reward_model.type == "ResnetRewModel":
+            from diffsynth.models.reward_model import ResnetRewModel
             rew_model = ResnetRewModel(self.cfg.reward_model.from_pretrained)
         elif self.cfg.reward_model.type == "TaskEmbedResnetRewModel":
+            from diffsynth.models.reward_model import TaskEmbedResnetRewModel
             rew_model = TaskEmbedResnetRewModel(
                 checkpoint_path=self.cfg.reward_model.from_pretrained,
                 task_suite_name=self.cfg.task_suite_name,
+            )
+        elif self.cfg.reward_model.type == "RoboTwinT5CrossAttn":
+            # RobotWin T5 Cross-Attention Reward模型
+            from rlinf.models.embodiment.reward import RoboTwinT5CrossAttnRewardModel
+            t5_model_name = self.cfg.reward_model.get("t5_model_name", "t5-base")
+            rew_model = RoboTwinT5CrossAttnRewardModel.from_pretrained(
+                self.cfg.reward_model.from_pretrained,
+                config={"t5_model_name": t5_model_name},
+            )
+        elif self.cfg.reward_model.type == "QwenVLMProgressRewardModel":
+            from omegaconf import DictConfig
+            from rlinf.models.embodiment.reward import QwenVLMProgressRewardModel
+
+            rew_model = QwenVLMProgressRewardModel(
+                DictConfig(self.cfg.reward_model)
             )
         else:
             raise ValueError(f"Unknown reward model type: {self.cfg.reward_model.type}")
@@ -339,8 +365,9 @@ class WanEnv(BaseWorldEnv):
                 1, self.condition_frame_length, 1, 1
             )  # [3, condition_frame_length, H, W]
 
+            # 使用可配置的action维度
             env_condition_action = np.zeros(
-                (self.condition_frame_length, 7), dtype=np.float32
+                (self.condition_frame_length, self.action_dim), dtype=np.float32
             )
 
             if self.reset_gripper_open and self.is_libero_env:
@@ -486,6 +513,56 @@ class WanEnv(BaseWorldEnv):
             # Predict rewards with instruction conditioning
             rewards = self.reward_model.predict_rew(extract_chunk_obs, instructions)
             rewards = rewards.reshape(self.num_envs, self.chunk)
+        elif self.cfg.reward_model.type == "RoboTwinT5CrossAttn":
+            extract_chunk_obs = extract_chunk_obs[
+                :, -self.chunk :, :, :, :, :
+            ]  # [num_envs, chunk, 3, v, h, w]
+            extract_chunk_obs = extract_chunk_obs.reshape(
+                self.num_envs * self.chunk, 3, v, h, w
+            )
+            extract_chunk_obs = extract_chunk_obs.squeeze(
+                2
+            )  # [num_envs * chunk, 3, h, w]
+            extract_chunk_obs = extract_chunk_obs.to(self.device)
+
+            # Convert from [-1, 1] to [0, 1] float (matching training data distribution)
+            # Use compute_reward() directly to avoid double ImageNet normalization:
+            #   predict_rew() → preprocess_images (ImageNet norm) → compute_reward() → _encode_visual() → preprocess_images (ImageNet norm again!)
+            #   compute_reward() → _encode_visual() → preprocess_images (ImageNet norm, single time) ✓
+            extract_chunk_obs_float = ((extract_chunk_obs + 1.0) / 2.0).float()
+
+            # Prepare instructions for each frame in the chunk
+            instructions = []
+            for env_idx in range(self.num_envs):
+                task_desc = self.task_descriptions[env_idx]
+                instructions.extend([task_desc] * self.chunk)
+
+            # Compute rewards with T5 text conditioning (single ImageNet normalization)
+            rewards = self.reward_model.compute_reward(
+                extract_chunk_obs_float, task_descriptions=instructions
+            )
+            rewards = rewards.reshape(self.num_envs, self.chunk)
+        elif self.cfg.reward_model.type == "QwenVLMProgressRewardModel":
+            extract_chunk_obs = extract_chunk_obs[
+                :, -self.chunk :, :, :, :, :
+            ]  # [num_envs, chunk, 3, v, h, w]
+            extract_chunk_obs = extract_chunk_obs.reshape(
+                self.num_envs * self.chunk, 3, v, h, w
+            )
+            extract_chunk_obs = extract_chunk_obs.squeeze(
+                2
+            )  # [num_envs * chunk, 3, h, w]
+            extract_chunk_obs = extract_chunk_obs.to(self.device)
+
+            instructions = []
+            for env_idx in range(self.num_envs):
+                task_desc = self.task_descriptions[env_idx]
+                instructions.extend([task_desc] * self.chunk)
+
+            rewards = self.reward_model.compute_reward(
+                extract_chunk_obs, task_descriptions=instructions
+            )
+            rewards = rewards.reshape(self.num_envs, self.chunk)
         else:
             raise ValueError(f"Unknown reward model type: {self.cfg.reward_model.type}")
 
@@ -622,8 +699,8 @@ class WanEnv(BaseWorldEnv):
         # Convert to uint8 tensor (keep as tensor, not numpy)
         full_image = full_image.to(torch.uint8)
 
-        # Get states (dummy for now, can be extended)
-        states = torch.zeros((num_envs, 16), device=self.device, dtype=torch.float32)
+        # Get states (dummy, dimension matches action_dim for norm_stats compatibility)
+        states = torch.zeros((num_envs, self.action_dim), device=self.device, dtype=torch.float32)
 
         # Get task descriptions
         if hasattr(self, "task_descriptions"):
@@ -674,6 +751,20 @@ class WanEnv(BaseWorldEnv):
         # Get rewards
         chunk_rewards = self._infer_next_chunk_rewards()
         chunk_rewards_tensors = self._calc_step_reward(chunk_rewards)
+
+        # Debug: print per-chunk, per-step rewards (same as OpenSoraEnv / GenieEnv)
+        if getattr(self.cfg, "print_chunk_rewards", False):
+            with torch.no_grad():
+                # chunk_rewards: [num_envs, chunk], chunk_rewards_tensors: [num_envs, chunk]
+                raw = chunk_rewards.cpu().numpy()  # raw reward model output
+                diff = chunk_rewards_tensors.cpu().numpy()  # step / relative reward
+                for env_idx in range(self.num_envs):
+                    raw_str = ", ".join([f"{v:.4f}" for v in raw[env_idx]])
+                    diff_str = ", ".join([f"{v:.4f}" for v in diff[env_idx]])
+                    print(
+                        f"[chunk={self.elapsed_steps // self.chunk}] env{env_idx} "
+                        f"raw=[{raw_str}] diff=[{diff_str}]"
+                    )
 
         # Estimate success (terminations) based on rewards
         estimated_success = self._estimate_success_from_rewards(chunk_rewards)

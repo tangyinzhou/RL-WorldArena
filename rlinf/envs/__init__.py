@@ -31,6 +31,10 @@ class SupportedEnvType(Enum):
     WANWM = "wan_wm"
     NN_WORLD_MODEL = "nn_world_model"
     GENIE_WM = "genie_wm"
+    CTRLWORLD_WM = "ctrlworld_wm"
+    COSMOSWM = "cosmos_wm"
+    IVIDEOGPTWM = "ivideogpt_wm"
+    IRASIMWM = "irasim_wm"
 
 
 def get_env_cls(env_type: str, env_cfg=None):
@@ -115,13 +119,25 @@ def get_env_cls(env_type: str, env_cfg=None):
         from rlinf.envs.world_model.world_model_wan_env import WanEnv
 
         return WanEnv
-    elif env_type == SupportedEnvType.NN_WORLD_MODEL:
-        from rlinf.envs.nn_world_model.nn_world_model_env import NNWorldModelEnv
-
-        return NNWorldModelEnv
     elif env_type == SupportedEnvType.GENIE_WM:
-        from rlinf.envs.genie_wm.genie_world_model_env import GenieWorldModelEnv
+        from rlinf.envs.world_model.world_model_genie_env import GenieEnv
 
-        return GenieWorldModelEnv
+        return GenieEnv
+    elif env_type == SupportedEnvType.CTRLWORLD_WM:
+        from rlinf.envs.world_model.world_model_ctrlworld_env import CtrlWorldEnv
+
+        return CtrlWorldEnv
+    elif env_type == SupportedEnvType.COSMOSWM:
+        from rlinf.envs.world_model.world_model_cosmos_env import CosmosEnv
+
+        return CosmosEnv
+    elif env_type == SupportedEnvType.IVIDEOGPTWM:
+        from rlinf.envs.world_model.world_model_ivideogpt_env import IVideoGPTEnv
+
+        return IVideoGPTEnv
+    elif env_type == SupportedEnvType.IRASIMWM:
+        from rlinf.envs.world_model.world_model_irasim_env import IRASIMEnv
+
+        return IRASIMEnv
     else:
         raise NotImplementedError(f"Environment type {env_type} not implemented")

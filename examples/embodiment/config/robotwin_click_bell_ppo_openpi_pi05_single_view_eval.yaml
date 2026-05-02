@@ -157,7 +157,13 @@ actor:
   enable_offload: True
 
   model:
-    model_path: "/ML-vePFS/protected/tangyinzhou/RLinf/logs/pi05-clickbell/click_bell_headcam/checkpoints/global_step_4000/actor"
+    # model_path: "/ML-vePFS/protected/tangyinzhou/RLinf/logs/pi05-clickbell/click_bell_headcam/checkpoints/global_step_4000/actor"
+    # model_path: "/ML-vePFS/protected/tangyinzhou/RLinf/logs/20260424-03:07:08-wan_robotwin_click_bell_grpo_openpi_pi05/wan_robotwin_click_bell_grpo_openpi_pi05/checkpoints/global_step_10/actor"
+    # model_path: "/manifold-obs/tangyinzhou/RLinf/logs/pi05-clickbell/pi05-clickbell/sft_openpi_click_bell_headcam/checkpoints/global_step_4000/actor"
+    # model_path: "/ML-vePFS/protected/tangyinzhou/RLinf/logs/20260424-06:35:50-opensora_robotwin_click_bell_grpo_pi05/opensora_robotwin_click_bell_grpo_pi05/checkpoints/global_step_3/actor"
+    # model_path: "/ML-vePFS/protected/tangyinzhou/RLinf/logs/20260425-02:55:57-genie_robotwin_click_bell_grpo_openpi_pi05/genie_robotwin_click_bell_grpo_openpi_pi05/checkpoints/global_step_5/actor"
+    # model_path: "/ML-vePFS/protected/tangyinzhou/RLinf/logs/20260425-09:08:35-cosmos_robotwin_click_bell_grpo_openpi_pi05/cosmos_robotwin_click_bell_grpo_openpi_pi05/checkpoints/global_step_3/actor"
+    model_path: "/ML-vePFS/protected/tangyinzhou/RLinf/logs/20260425-15:01:43-ctrlworld_robotwin_click_bell_grpo_openpi_pi05/ctrlworld_robotwin_click_bell_grpo_openpi_pi05/checkpoints/global_step_3/actor"
     num_action_chunks: 50
     action_dim: 14
     add_value_head: True

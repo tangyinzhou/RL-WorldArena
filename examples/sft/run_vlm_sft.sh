@@ -13,7 +13,7 @@ else
 fi
 
 echo "Using Python at $(which python)"
-LOG_DIR="${REPO_PATH}/logs/$(date +'%Y%m%d-%H:%M:%S')" #/$(date +'%Y%m%d-%H:%M:%S')" d
+LOG_DIR="/manifold-obs/tangyinzhou/RLinf/logs/$(date +'%Y%m%d-%H:%M:%S')"
 MEGA_LOG_FILE="${LOG_DIR}/run_vlm_sft.log"
 mkdir -p "${LOG_DIR}"
 CMD="python ${SRC_FILE} --config-path ${VLM_PATH}/config/ --config-name ${CONFIG_NAME} runner.logger.log_path=${LOG_DIR}"

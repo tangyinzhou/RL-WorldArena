@@ -1,5 +1,5 @@
 """
-Debug script for RoboTwin Reward Model training on single GPU.
+Debug script for RoboTwin Reward Model training on 1-4 GPUs.
 This script is designed for line-by-line debugging with debugger (e.g., pdb, debugpy).
 
 Usage:
@@ -24,9 +24,8 @@ Usage:
 import os
 import sys
 
-# Disable NCCL for single-GPU debugging
-os.environ["NCCL_P2P_DISABLE"] = "1"
-os.environ["NCCL_IB_DISABLE"] = "1"
+# Keep NCCL defaults for multi-GPU debugging/training.
+# If you need single-GPU-only debugging, you can override these manually.
 
 # Set Ray temp directory
 RAY_ROOT_DIR = "/ML-vePFS/protected/tangyinzhou/tmp/ray"
@@ -51,8 +50,8 @@ try:
 except Exception as e:
     print(f"Note: Could not stop Ray cluster: {e}")
 
-# Set CUDA visible devices to single GPU
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+# Use 4 GPUs by default; can still be overridden from shell before launch.
+os.environ["CUDA_VISIBLE_DEVICES"] = os.environ.get("CUDA_VISIBLE_DEVICES", "0,1,2,3")
 
 # Set wandb API key (replace with your actual key)
 # Get your API key from: https://wandb.ai/settings

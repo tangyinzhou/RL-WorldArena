@@ -186,7 +186,7 @@ EOF
 
             # Create new venv
             install_uv
-            uv venv "$VENV_DIR" --python "$PYTHON_VERSION"
+            uv venv "$VENV_DIR" --python "$PYTHON_VERSION" 
             # shellcheck disable=SC1090
             source "$VENV_DIR/bin/activate"
         else

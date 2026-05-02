@@ -138,8 +138,18 @@ class OpenSoraEnv(BaseWorldEnv):
         )
         self._is_offloaded = False
 
+        # World model environment type (for RobotWin vs LIBERO branching)
+        self.wm_env_type = self.cfg.get("wm_env_type", "libero")
+        self.is_robotwin_env = self.wm_env_type == "robotwin"
+
     def _build_dataset(self, cfg):
-        return NpyTrajectoryDatasetWrapper(cfg.initial_image_path)
+        action_key = cfg.get("action_key", "delta_action")
+        state_key = cfg.get("state_key", "init_ee_pose")
+        return NpyTrajectoryDatasetWrapper(
+            cfg.initial_image_path,
+            action_key=action_key,
+            state_key=state_key,
+        )
 
     def _load_vae(self):
         # Convert OmegaConf DictConfig to regular dict
@@ -172,19 +182,47 @@ class OpenSoraEnv(BaseWorldEnv):
         return scheduler
 
     def _load_reward_model(self):
-        rm_cfg = OmegaConf.to_container(self.world_model_cfg.reward_model, resolve=True)
-        rew_model = build_module(rm_cfg, MODELS)
+        reward_type = self.world_model_cfg.reward_model.get("type", "ResnetRM")
+        if reward_type == "RoboTwinT5CrossAttn":
+            # RoboTwinT5CrossAttn 不在 opensora registry，手动加载
+            from rlinf.models.embodiment.reward import RoboTwinT5CrossAttnRewardModel
 
+            t5_model_name = self.world_model_cfg.reward_model.get(
+                "t5_model_name", "t5-base"
+            )
+            rew_model = RoboTwinT5CrossAttnRewardModel.from_pretrained(
+                self.world_model_cfg.reward_model.from_pretrained,
+                config={"t5_model_name": t5_model_name},
+            )
+        else:
+            # 默认通过 opensora registry 加载 (ResnetRM 等)
+            rm_cfg = OmegaConf.to_container(
+                self.world_model_cfg.reward_model, resolve=True
+            )
+            rew_model = build_module(rm_cfg, MODELS)
         return rew_model
 
     def _load_action_stats(self):
-        """Load action normalization statistics"""
+        """Load action normalization statistics.
+        
+        Supports two JSON formats:
+        - Flat format (LIBERO): {"action": {"q01": [...], "q99": [...]}}
+        - Nested format (RobotWin WebDataset): {"dataset_name": {"action": {...}}}
+        """
         stats_path = self.world_model_cfg.get("stats_path", None)
         if stats_path is not None and os.path.exists(stats_path):
             with open(stats_path, "r") as f:
                 stats = json.load(f)
-                q01 = np.asarray(stats["action"]["q01"], np.float32)
-                q99 = np.asarray(stats["action"]["q99"], np.float32)
+            #兼容两种格式:
+            #扁平格式 (LIBERO): {"action": {"q01": [...], "q99": [...]}}
+            #嵌套格式 (RobotWin WebDataset): {"dataset_name": {"action": {...}}}
+            if "action" in stats:
+                action_stats = stats["action"]
+            else:
+                first_key = next(iter(stats))
+                action_stats = stats[first_key]["action"]
+            q01 = np.asarray(action_stats["q01"], np.float32)
+            q99 = np.asarray(action_stats["q99"], np.float32)
             return {"q01": q01, "q99": q99}
         else:
             raise ValueError(f"Action stats path {stats_path} does not exist")
@@ -592,7 +630,9 @@ class OpenSoraEnv(BaseWorldEnv):
             0, 3, 1, 2, 4, 5
         )  # [num_envs, chunk + condition_frame_length, 3, v, h, w]
 
-        if self.cfg.world_model_cfg.reward_model.type == "ResnetRM":
+        reward_type = self.cfg.world_model_cfg.reward_model.get("type", "ResnetRM")
+
+        if reward_type == "ResnetRM":
             extract_chunk_obs = extract_chunk_obs[
                 :, -self.chunk :, :, :, :, :
             ]  # [num_envs, chunk, 3, v, h, w]
@@ -606,10 +646,38 @@ class OpenSoraEnv(BaseWorldEnv):
 
             rewards = self.reward_model.predict_rew(extract_chunk_obs)
             rewards = rewards.reshape(self.num_envs, self.chunk)
-        else:
-            raise ValueError(
-                f"Unknown reward model type: {self.cfg.world_model_cfg.reward_model.type}"
+
+        elif reward_type == "RoboTwinT5CrossAttn":
+            # OpenSora 解码后 current_obs 值域是 [-1, 1]
+            # 手动转换到 [0, 1] 后直接调用 compute_reward()，避免 predict_rew() 内部的双重 preprocess_images：
+            #   predict_rew() → preprocess_images (ImageNet norm) → compute_reward() → _encode_visual() → preprocess_images (ImageNet norm again!)
+            #   compute_reward() → _encode_visual() → preprocess_images (ImageNet norm, single time) ✓
+            extract_chunk_obs = extract_chunk_obs[
+                :, -self.chunk :, :, :, :, :
+            ]  # [num_envs, chunk, 3, v, h, w]
+            extract_chunk_obs = extract_chunk_obs.reshape(
+                self.num_envs * self.chunk, 3, v, h, w
             )
+            # squeeze dim 2: [num_envs * chunk, 3, h, w]
+            extract_chunk_obs = extract_chunk_obs.squeeze(2)
+            extract_chunk_obs = extract_chunk_obs.to(self.device)
+            
+            # 从 [-1, 1] 转换到 [0, 1]（匹配训练数据分布）
+            extract_chunk_obs_float = ((extract_chunk_obs + 1.0) / 2.0).float()
+
+            # 构建 instruction 列表（每个 env 的 instruction 重复 chunk 次）
+            instructions = []
+            for env_idx in range(self.num_envs):
+                instructions.extend([self.task_descriptions[env_idx]] * self.chunk)
+
+            # 使用 compute_reward() 直接计算奖励（单次 ImageNet normalize）
+            rewards = self.reward_model.compute_reward(
+                extract_chunk_obs_float, task_descriptions=instructions
+            )
+            rewards = rewards.reshape(self.num_envs, self.chunk)
+
+        else:
+            raise ValueError(f"Unknown reward model type: {reward_type}")
 
         return rewards
 
@@ -770,8 +838,9 @@ class OpenSoraEnv(BaseWorldEnv):
         # Convert to uint8 tensor
         full_image = full_image.to(torch.uint8)
 
-        # Get states (dummy for now, can be extended)
-        states = torch.zeros((num_envs, 16), device=self.device, dtype=torch.float32)
+        # Get states - dimension configurable via action_dim (RobotWin=14, LIBERO=7)
+        state_dim = getattr(self.cfg, "action_dim", 16)
+        states = torch.zeros((num_envs, state_dim), device=self.device, dtype=torch.float32)
 
         # Get task descriptions
         if hasattr(self, "task_descriptions"):
@@ -823,6 +892,18 @@ class OpenSoraEnv(BaseWorldEnv):
         # Get rewards
         chunk_rewards = self._infer_next_chunk_rewards()
         chunk_rewards_tensors = self._calc_step_reward(chunk_rewards)
+
+        # Debug: print per-chunk, per-step rewards
+        if getattr(self.cfg, "print_chunk_rewards", False):
+            with torch.no_grad():
+                # chunk_rewards: [num_envs, chunk], chunk_rewards_tensors: [num_envs, chunk]
+                raw = chunk_rewards.cpu().numpy()  # 原始 reward model 输出
+                diff = chunk_rewards_tensors.cpu().numpy()  # 差分 reward
+                for env_idx in range(self.num_envs):
+                    raw_str = ", ".join([f"{v:.4f}" for v in raw[env_idx]])
+                    diff_str = ", ".join([f"{v:.4f}" for v in diff[env_idx]])
+                    print(f"[chunk={self.elapsed_steps//self.chunk}] env{env_idx} "
+                          f"raw=[{raw_str}] diff=[{diff_str}]")
 
         # Estimate success (terminations) based on rewards
         estimated_success = self._estimate_success_from_rewards(chunk_rewards)
